@@ -1,16 +1,27 @@
 import Database from 'better-sqlite3'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { mkdirSync, existsSync } from 'node:fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '../../data/syndicus.db')
+
+const dbDir = path.dirname(dbPath)
+if (!existsSync(dbDir)) {
+  mkdirSync(dbDir, { recursive: true })
+}
 
 let db: Database.Database
 
 export function getDb(): Database.Database {
   if (!db) {
-    db = new Database(dbPath)
-    initSchema()
+    try {
+      db = new Database(dbPath)
+      initSchema()
+    } catch (err) {
+      console.error('Failed to initialize database:', err)
+      throw new Error('Database unavailable. Please check the data directory and permissions.')
+    }
   }
   return db
 }
@@ -82,9 +93,19 @@ function initSchema() {
     db.exec(`ALTER TABLE preferences ADD COLUMN dark_mode INTEGER DEFAULT 0`)
   } catch {
   }
+
+  try {
+    db.exec(`ALTER TABLE articles ADD COLUMN is_read INTEGER DEFAULT 0`)
+  } catch {
+  }
+
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_articles_is_read ON articles(is_read)`)
+  } catch {
+  }
 }
 
 export type Feed = { id: number; url: string; title: string; last_fetched: string | null; favicon_url: string | null }
-export type Article = { id: number; feed_id: number; url: string; title: string; content_snippet: string | null; published: string | null; fetched_at: string; ai_score: number | null; image_url: string | null }
+export type Article = { id: number; feed_id: number; url: string; title: string; content_snippet: string | null; published: string | null; fetched_at: string; ai_score: number | null; image_url: string | null; is_read: number }
 export type Engagement = { id: number; article_url: string; article_title: string | null; content_snippet: string | null; event_type: 'click' | 'like'; timestamp: string }
 export type Preferences = { id: number; prompt_text: string; dark_mode: number }

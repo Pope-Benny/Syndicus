@@ -2,10 +2,11 @@ services:
   app:
     build: .
     ports:
-      - "3003:3000"
+      - "3004:3000"
     volumes:
       - ./data:/app/data
     environment:
-      - CLOUDFLARE_ACCOUNT_ID
-      - CLOUDFLARE_API_TOKEN
+      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - DATABASE_PATH=/app/data/syndicus.db
+    network_mode: bridge

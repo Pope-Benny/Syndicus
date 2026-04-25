@@ -57,10 +57,16 @@ const updatePreferences = createServerFn({ method: 'POST' })
 
 export const Route = createFileRoute('/settings')({
   component: SettingsPage,
-  loader: async () => {
-    const feeds = await getFeeds({ data: {} })
-    const prefs = await getPreferences({ data: {} })
-    return { feeds, preferences: prefs }
+  loader: async ({ context }) => {
+    try {
+      context.clientFnCache?.clear?.()
+      const feeds = await getFeeds({ data: {} })
+      const prefs = await getPreferences({ data: {} })
+      return { feeds, preferences: prefs }
+    } catch (err) {
+      console.error('Failed to load settings data:', err)
+      return { feeds: [], preferences: { prompt_text: '', dark_mode: 0 } }
+    }
   },
 })
 

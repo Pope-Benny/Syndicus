@@ -1,5 +1,5 @@
+import { getDb } from './db'
 import { JSDOM } from 'jsdom'
-import { getDb, type Feed, type Article } from './db'
 
 function extractImageFromContent(html: string): string | null {
   const imgMatch = html.match(/<img[^>]+src=["']([^"']+)["']/i)
@@ -52,7 +52,13 @@ async function fetchFavicon(feedUrl: string): Promise<string | null> {
   }
 }
 
-export async function fetchFeed(url: string): Promise<{ title: string; articles: Omit<Article, 'id' | 'feed_id'>[]; favicon_url: string | null }> {
+export interface FeedData {
+  title: string
+  articles: { url: string; title: string; content_snippet: string | null; published: string | null; fetched_at: string; ai_score: null; image_url: string | null }[]
+  favicon_url: string | null
+}
+
+export async function fetchFeed(url: string): Promise<FeedData> {
   const response = await fetch(url, {
     headers: {
       'User-Agent': 'Syndicus/1.0',
@@ -69,7 +75,7 @@ export async function fetchFeed(url: string): Promise<{ title: string; articles:
   const xml = dom.window.document
 
   let feedTitle = ''
-  const articles: Omit<Article, 'id' | 'feed_id'>[] = []
+  const articles: FeedData['articles'] = []
   let faviconUrl: string | null = null
 
   const root = xml.querySelector('feed') || xml.querySelector('channel') || xml.querySelector('rss')
@@ -126,30 +132,42 @@ export async function fetchFeed(url: string): Promise<{ title: string; articles:
 
 export async function fetchAllFeeds(): Promise<number> {
   const db = getDb()
-  const feeds = db.prepare('SELECT * FROM feeds').all() as Feed[]
+  const feeds = db.prepare('SELECT * FROM feeds').all() as { id: number; url: string }[]
+  
+  if (feeds.length === 0) return 0
+
+  const results = await Promise.allSettled(
+    feeds.map(feed => fetchFeed(feed.url))
+  )
+
   let totalArticles = 0
 
-  for (const feed of feeds) {
-    try {
-      const { title, articles, favicon_url } = await fetchFeed(feed.url)
-      
-      const insert = db.prepare(`
-        INSERT OR IGNORE INTO articles (feed_id, url, title, content_snippet, published, fetched_at, ai_score, image_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-
-      const insertMany = db.transaction((arts: typeof articles) => {
-        for (const art of arts) {
-          insert.run(feed.id, art.url, art.title, art.content_snippet, art.published, art.fetched_at, art.ai_score, art.image_url)
-        }
-      })
-
-      insertMany(articles)
-      db.prepare('UPDATE feeds SET last_fetched = ?, title = ?, favicon_url = ? WHERE id = ?').run(new Date().toISOString(), title, favicon_url, feed.id)
-      totalArticles += articles.length
-    } catch (err) {
-      console.error(`Error fetching feed ${feed.url}:`, err)
+  for (let i = 0; i < feeds.length; i++) {
+    const result = results[i]
+    const feed = feeds[i]
+    
+    if (result.status === 'rejected') {
+      console.error(`Error fetching feed ${feed.url}:`, result.reason)
+      continue
     }
+
+    const { title, articles, favicon_url } = result.value
+    if (articles.length === 0) continue
+
+    const insert = db.prepare(`
+      INSERT OR IGNORE INTO articles (feed_id, url, title, content_snippet, published, fetched_at, ai_score, image_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    const insertMany = db.transaction((arts: typeof articles) => {
+      for (const art of arts) {
+        insert.run(feed.id, art.url, art.title, art.content_snippet, art.published, art.fetched_at, art.ai_score, art.image_url)
+      }
+    })
+
+    insertMany(articles)
+    db.prepare('UPDATE feeds SET last_fetched = ?, title = ?, favicon_url = ? WHERE id = ?').run(new Date().toISOString(), title, favicon_url, feed.id)
+    totalArticles += articles.length
   }
 
   return totalArticles

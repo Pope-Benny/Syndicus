@@ -20,8 +20,9 @@ RUN apk add --no-cache tini
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server.ts ./
 COPY package.json ./
 
-EXPOSE 3000
+EXPOSE 3004
 ENTRYPOINT ["tini", "--"]
-CMD ["node", "dist/server/server.js"]
+CMD ["node", "--import", "tsx", "server.ts"]

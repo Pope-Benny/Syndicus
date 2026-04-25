@@ -1,36 +1,61 @@
 import * as React from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useServerFn } from '~/lib/useServerFn'
 
 const getArticles = createServerFn({ method: 'GET' })
   .inputValidator((data: { limit?: number; offset?: number }) => data)
   .handler(async () => {
-    const db = await import('~/lib/db').then(m => m.getDb())
-    const limit = 50
-    const offset = 0
+    try {
+      const db = await import('~/lib/db').then(m => m.getDb())
+      const limit = 50
+      const offset = 0
 
-    const articles = db.prepare(`
-      SELECT a.*, f.title as feed_title, f.favicon_url
-      FROM articles a
-      JOIN feeds f ON a.feed_id = f.id
-      WHERE a.ai_score IS NOT NULL
-      ORDER BY a.ai_score DESC, a.published DESC
-      LIMIT ? OFFSET ?
-    `).all(limit, offset) as any[]
+      const articles = db.prepare(`
+        SELECT a.*, f.title as feed_title, f.favicon_url
+        FROM articles a
+        JOIN feeds f ON a.feed_id = f.id
+        LIMIT ? OFFSET ?
+      `).all(limit, offset) as any[]
 
-    return articles
+      const sorted = [...articles].sort((a, b) => {
+        if (a.is_read !== b.is_read) return a.is_read - b.is_read
+        const dateA = new Date(a.published || a.fetched_at).getTime()
+        const dateB = new Date(b.published || b.fetched_at).getTime()
+        if (dateA !== dateB) return dateB - dateA
+        return (b.ai_score || 0) - (a.ai_score || 0)
+      })
+
+      return sorted
+    } catch (err) {
+      console.error('[getArticles] Error:', err)
+      throw err
+    }
   })
 
-const refreshFeeds = createServerFn({ method: 'POST' }).handler(async () => {
-  const { fetchAllFeeds } = await import('~/lib/rss')
-  const { scoreAllArticles } = await import('~/lib/ai')
+const refreshFeeds = createServerFn({ method: 'POST' })
+  .inputValidator((data: { scoreArticles?: boolean }) => data)
+  .handler(async ({ data }) => {
+    console.log('[refreshFeeds] Starting refresh...')
+    
+    try {
+      const { fetchAllFeeds } = await import('~/lib/rss')
+      const count = await fetchAllFeeds()
+      console.log('[refreshFeeds] Fetched', count, 'articles')
+      
+      if (data?.scoreArticles !== false) {
+        console.log('[refreshFeeds] Starting AI scoring...')
+        const { scoreAllArticles } = await import('~/lib/ai')
+        await scoreAllArticles()
+        console.log('[refreshFeeds] AI scoring complete')
+      }
 
-  const count = await fetchAllFeeds()
-  await scoreAllArticles()
-
-  return { ok: true, articlesAdded: count }
-})
+      return { ok: true, articlesAdded: count }
+    } catch (err) {
+      console.error('[refreshFeeds] Error:', err)
+      return { ok: false, error: String(err), articlesAdded: 0 }
+    }
+  })
 
 const addLike = createServerFn({ method: 'POST' })
   .inputValidator((data: { articleUrl: string; articleTitle: string; contentSnippet: string }) => data)
@@ -47,7 +72,7 @@ const addLike = createServerFn({ method: 'POST' })
   })
 
 const addClick = createServerFn({ method: 'POST' })
-  .inputValidator((data: { articleUrl: string; articleTitle: string; contentSnippet: string }) => data)
+  .inputValidator((data: { articleUrl: string; articleTitle: string; contentSnippet: string; articleId?: number }) => data)
   .handler(async ({ data }) => {
     const db = await import('~/lib/db').then(m => m.getDb())
     db.prepare('INSERT INTO engagement (article_url, article_title, content_snippet, event_type, timestamp) VALUES (?, ?, ?, ?, ?)').run(
@@ -57,6 +82,9 @@ const addClick = createServerFn({ method: 'POST' })
       'click',
       new Date().toISOString()
     )
+    if (data.articleId) {
+      db.prepare('UPDATE articles SET is_read = 1 WHERE id = ?').run(data.articleId)
+    }
     return { ok: true }
   })
 
@@ -70,30 +98,58 @@ const toggleDarkMode = createServerFn({ method: 'POST' })
 
 export const Route = createFileRoute('/')({
   component: FeedPage,
-  loader: async () => {
-    const articles = await getArticles({ data: { limit: 50 } })
-    const db = await import('~/lib/db').then(m => m.getDb())
-    const prefs = db.prepare('SELECT dark_mode FROM preferences WHERE id = 1').get()
-    return { articles, darkMode: prefs?.dark_mode === 1 }
+  loader: async ({ context }) => {
+    try {
+      const db = await import('~/lib/db').then(m => m.getDb())
+      const prefs = db.prepare('SELECT dark_mode FROM preferences WHERE id = 1').get()
+      return { darkMode: prefs?.dark_mode === 1 }
+    } catch (err) {
+      console.error('Failed to load feed data:', err)
+      return { darkMode: false }
+    }
   },
 })
 
 function FeedPage() {
-  const { articles, darkMode } = Route.useLoaderData() as { articles: any[]; darkMode: boolean }
-  const router = useRouter()
+  const { darkMode } = Route.useLoaderData() as { articles: any[]; darkMode: boolean }
   const [refreshing, setRefreshing] = React.useState(false)
+  const [articlesList, setArticlesList] = React.useState<any[]>([])
 
   const handleRefresh = useServerFn(refreshFeeds)
+  const handleGetArticles = useServerFn(getArticles)
   const handleLike = useServerFn(addLike)
+  const handleClick = useServerFn(addClick)
   const handleToggleDarkMode = useServerFn(toggleDarkMode)
   const [showSun, setShowSun] = React.useState(darkMode)
+  const [initialLoad, setInitialLoad] = React.useState(true)
+
+  const loadArticles = async () => {
+    const arts = await handleGetArticles({ data: { limit: 50 } })
+    setArticlesList(arts || [])
+  }
+
+  const onLoadRefresh = async () => {
+    setRefreshing(true)
+    await handleRefresh({ data: { scoreArticles: true } })
+    await loadArticles()
+    setRefreshing(false)
+  }
 
   const onRefresh = async () => {
     setRefreshing(true)
-    await handleRefresh({ data: {} })
-    router.invalidate()
+    const result = await handleRefresh({ data: { scoreArticles: true } })
     setRefreshing(false)
+    if (result?.ok) {
+      await loadArticles()
+    }
   }
+
+  React.useEffect(() => {
+    if (initialLoad) {
+      setInitialLoad(false)
+      onLoadRefresh()
+    }
+  }, [initialLoad])
 
   return (
     <div className="newspaper-container">
@@ -160,15 +216,15 @@ function FeedPage() {
         </div>
       </header>
 
-      {articles.length === 0 ? (
+      {articlesList.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '3rem' }}>
           <p>No articles to display.</p>
           <p>Kindly add some feeds in the <a href="/settings">Settings</a> section to begin your reading.</p>
         </div>
       ) : (
         <div className="articles-list">
-          {articles.map((article: any) => (
-            <ArticleCard key={article.id} article={article} onLike={handleLike} />
+          {articlesList.map((article: any) => (
+            <ArticleCard key={article.id} article={article} onLike={handleLike} onClick={handleClick} />
           ))}
         </div>
       )}
@@ -176,7 +232,7 @@ function FeedPage() {
   )
 }
 
-function ArticleCard({ article, onLike }: { article: any; onLike: any }) {
+function ArticleCard({ article, onLike, onClick }: { article: any; onLike: any; onClick: any }) {
   const [liked, setLiked] = React.useState(false)
 
   const handleLike = async () => {
@@ -188,11 +244,28 @@ function ArticleCard({ article, onLike }: { article: any; onLike: any }) {
     setLiked(true)
   }
 
+  const handleClick = async () => {
+    await onClick({ data: { 
+      articleUrl: article.url, 
+      articleTitle: article.title, 
+      contentSnippet: article.content_snippet || '',
+      articleId: article.id
+    } })
+  }
+
   const score = article.ai_score !== null ? Math.round(article.ai_score * 100) : null
   const scoreClass = article.ai_score > 0.7 ? 'score-high' : article.ai_score > 0.4 ? 'score-medium' : 'score-low'
 
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return null
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+
+  const publishedDate = article.published || article.fetched_at
+
   return (
-    <article className="article-card">
+    <article className={`article-card ${article.is_read ? 'read' : 'unread'}`}>
       <div className="article-meta">
         {article.favicon_url && (
           <img 
@@ -208,10 +281,13 @@ function ArticleCard({ article, onLike }: { article: any; onLike: any }) {
         )}
       </div>
       <h3 className="article-title">
-        <a href={article.url} target="_blank" rel="noopener noreferrer">
+        <a href={article.url} target="_blank" rel="noopener noreferrer" onClick={handleClick}>
           {article.title}
         </a>
       </h3>
+      {publishedDate && (
+        <p className="article-date">{formatDate(publishedDate)}</p>
+      )}
       {article.image_url && (
         <img 
           src={article.image_url} 
