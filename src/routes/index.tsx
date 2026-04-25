@@ -99,8 +99,12 @@ function FeedPage() {
     <div className="newspaper-container">
       <header className="newspaper-header">
         <div className="hero-section">
-          <h1 className="hero-title">Syndicus</h1>
-          <p className="hero-subtitle">caretaker of the issues</p>
+          <img
+            src="/hero.png"
+            alt="Syndicus"
+            className="hero-image"
+            style={{ filter: showSun ? 'invert(1)' : undefined }}
+          />
         </div>
         <div className="header-actions">
           <button
