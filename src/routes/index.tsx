@@ -15,6 +15,8 @@ const getArticles = createServerFn({ method: 'GET' })
         SELECT a.*, f.title as feed_title, f.favicon_url
         FROM articles a
         JOIN feeds f ON a.feed_id = f.id
+        WHERE a.ai_score IS NOT NULL AND a.is_dismissed = 0
+        ORDER BY a.is_read ASC, RANDOM()
         LIMIT ? OFFSET ?
       `).all(limit, offset) as any[]
 
@@ -88,6 +90,14 @@ const addClick = createServerFn({ method: 'POST' })
     return { ok: true }
   })
 
+const dismissArticle = createServerFn({ method: 'POST' })
+  .inputValidator((data: { articleId: number }) => data)
+  .handler(async ({ data }) => {
+    const db = await import('~/lib/db').then(m => m.getDb())
+    db.prepare('UPDATE articles SET is_dismissed = 1 WHERE id = ?').run(data.articleId)
+    return { ok: true }
+  })
+
 const toggleDarkMode = createServerFn({ method: 'POST' })
   .inputValidator((data: { enabled: boolean }) => data)
   .handler(async ({ data }) => {
@@ -119,6 +129,7 @@ function FeedPage() {
   const handleGetArticles = useServerFn(getArticles)
   const handleLike = useServerFn(addLike)
   const handleClick = useServerFn(addClick)
+  const handleDismiss = useServerFn(dismissArticle)
   const handleToggleDarkMode = useServerFn(toggleDarkMode)
   const [showSun, setShowSun] = React.useState(darkMode)
   const [initialLoad, setInitialLoad] = React.useState(true)
@@ -151,6 +162,8 @@ function FeedPage() {
     }
   }, [initialLoad])
 
+const [menuOpen, setMenuOpen] = React.useState(false)
+
   return (
     <div className="newspaper-container">
       <header className="newspaper-header">
@@ -162,86 +175,91 @@ function FeedPage() {
             style={{ filter: showSun ? 'invert(1)' : undefined }}
           />
         </div>
-        <div className="header-actions">
-          <button
-            onClick={async () => {
-              const newValue = !showSun
-              setShowSun(newValue)
-              document.documentElement.classList.toggle('dark', newValue)
-              await handleToggleDarkMode({ data: { enabled: newValue } })
-            }}
-            className="header-icon-btn"
-            title={showSun ? "Light Mode" : "Dark Mode"}
-          >
-            {showSun ? (
+        <button
+          className="hamburger-btn"
+          onClick={() => setMenuOpen(!menuOpen)}
+          title="Menu"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+        {menuOpen && (
+          <div className="hamburger-menu">
+            <button
+              onClick={async () => {
+                const newValue = !showSun
+                setShowSun(newValue)
+                document.documentElement.classList.toggle('dark', newValue)
+                await handleToggleDarkMode({ data: { enabled: newValue } })
+              }}
+              className="menu-item"
+            >
+              {showSun ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="5"/>
+                  <path d="M12 1v2"/>
+                  <path d="M12 21v2"/>
+                  <path d="M4.22 4.22l1.42 1.42"/>
+                  <path d="M18.36 18.36l1.42 1.42"/>
+                  <path d="M1 12h2"/>
+                  <path d="M21 12h2"/>
+                  <path d="M4.22 19.78l1.42-1.42"/>
+                  <path d="M18.36 5.64l1.42-1.42"/>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              )}
+              <span>{showSun ? "Light Mode" : "Dark Mode"}</span>
+            </button>
+            <button
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="menu-item"
+            >
+              {refreshing ? (
+                <span className="spinner" />
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M23 4v6h-6"/>
+                  <path d="M1 20v-6h6"/>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+              )}
+              <span>{refreshing ? "Refreshing..." : "Refresh Feeds"}</span>
+            </button>
+            <a href="/settings" className="menu-item" onClick={() => setMenuOpen(false)}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="5"/>
-                <path d="M12 1v2"/>
-                <path d="M12 21v2"/>
-                <path d="M4.22 4.22l1.42 1.42"/>
-                <path d="M18.36 18.36l1.42 1.42"/>
-                <path d="M1 12h2"/>
-                <path d="M21 12h2"/>
-                <path d="M4.22 19.78l1.42-1.42"/>
-                <path d="M18.36 5.64l1.42-1.42"/>
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
               </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-              </svg>
-            )}
-          </button>
-          <button
-            onClick={onRefresh}
-            disabled={refreshing}
-            className="header-icon-btn"
-            title="Refresh Feeds"
-          >
-            {refreshing ? (
-              <span className="spinner" />
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M23 4v6h-6"/>
-                <path d="M1 20v-6h6"/>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-              </svg>
-            )}
-          </button>
-          <a href="/settings" className="header-icon" title="Settings">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-          </a>
-        </div>
+              <span>Settings</span>
+            </a>
+          </div>
+        )}
       </header>
 
-      {articlesList.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '3rem' }}>
-          <p>No articles to display.</p>
-          <p>Kindly add some feeds in the <a href="/settings">Settings</a> section to begin your reading.</p>
-        </div>
-      ) : (
-        <div className="articles-list">
+      <div className="articles-list">
           {articlesList.map((article: any) => (
-            <ArticleCard key={article.id} article={article} onLike={handleLike} onClick={handleClick} />
+            <ArticleCard key={article.id} article={article} onDismiss={handleDismiss} onClick={handleClick} />
           ))}
         </div>
-      )}
     </div>
   )
 }
 
-function ArticleCard({ article, onLike, onClick }: { article: any; onLike: any; onClick: any }) {
-  const [liked, setLiked] = React.useState(false)
+function ArticleCard({ article, onDismiss, onClick }: { article: any; onDismiss: any; onClick: any }) {
+  const [dismissed, setDismissed] = React.useState(false)
+  const [isRemoving, setIsRemoving] = React.useState(false)
 
-  const handleLike = async () => {
-    await onLike({ data: { 
-      articleUrl: article.url, 
-      articleTitle: article.title, 
-      contentSnippet: article.content_snippet || '' 
-    } })
-    setLiked(true)
+  const handleDismiss = async () => {
+    setIsRemoving(true)
+    await onDismiss({ data: { articleId: article.id } })
+    setTimeout(() => setDismissed(true), 300)
   }
 
   const handleClick = async () => {
@@ -264,8 +282,27 @@ function ArticleCard({ article, onLike, onClick }: { article: any; onLike: any; 
 
   const publishedDate = article.published || article.fetched_at
 
+  const isHtmlOnly = React.useMemo(() => {
+    if (!article.content_snippet) return false
+    const stripped = article.content_snippet.replace(/<[^>]+>/g, '').trim()
+    return stripped.length < 20
+  }, [article.content_snippet])
+
+  if (dismissed) return null
+
   return (
-    <article className={`article-card ${article.is_read ? 'read' : 'unread'}`}>
+    <article className={`article-card ${article.is_read ? 'read' : 'unread'} ${isRemoving ? 'removing' : ''}`}>
+      <button
+        onClick={handleDismiss}
+        disabled={isRemoving}
+        className="dismiss-btn"
+        title="Dismiss"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+        </svg>
+      </button>
       <div className="article-meta">
         {article.favicon_url && (
           <img 
@@ -276,10 +313,12 @@ function ArticleCard({ article, onLike, onClick }: { article: any; onLike: any; 
           />
         )}
         <span className="feed-title">{article.feed_title}</span>
-        {score !== null && (
-          <span className={`score-badge ${scoreClass}`}>{score}%</span>
-        )}
       </div>
+{score !== null && (
+        <div className="article-dismiss">
+            <span className={`score-badge ${scoreClass}`}>{score}%</span>
+        </div>
+      )}
       <h3 className="article-title">
         <a href={article.url} target="_blank" rel="noopener noreferrer" onClick={handleClick}>
           {article.title}
@@ -296,21 +335,12 @@ function ArticleCard({ article, onLike, onClick }: { article: any; onLike: any; 
           onError={(e) => (e.currentTarget.style.display = 'none')}
         />
       )}
-      {article.content_snippet && (
+      {article.content_snippet && !isHtmlOnly && (
         <p className="article-excerpt">
           {article.content_snippet.slice(0, 180)}
           {article.content_snippet.length > 180 ? '...' : ''}
         </p>
       )}
-      <div className="article-actions">
-        <button
-          onClick={handleLike}
-          disabled={liked}
-          className={`action-btn ${liked ? 'liked' : ''}`}
-        >
-          {liked ? '★ Saved' : '☆ Save'}
-        </button>
-      </div>
     </article>
   )
 }

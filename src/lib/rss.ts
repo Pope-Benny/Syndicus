@@ -6,6 +6,14 @@ function extractImageFromContent(html: string): string | null {
   return imgMatch ? imgMatch[1] : null
 }
 
+function isHtmlOnlyContent(content: string | null): boolean {
+  if (!content) return false
+  const trimmed = content.trim()
+  if (!trimmed) return false
+  const stripped = trimmed.replace(/<[^>]+>/g, '').trim()
+  return stripped.length < 20
+}
+
 function extractImageFromItem(item: Element): string | null {
   const enclosure = item.querySelector('enclosure[type^="image"]')
   if (enclosure) {
@@ -54,7 +62,7 @@ async function fetchFavicon(feedUrl: string): Promise<string | null> {
 
 export interface FeedData {
   title: string
-  articles: { url: string; title: string; content_snippet: string | null; published: string | null; fetched_at: string; ai_score: null; image_url: string | null }[]
+  articles: { url: string; title: string; content_snippet: string | null; published: string | null; fetched_at: string; ai_score: null; image_url: string | null; is_html_only: boolean }[]
   favicon_url: string | null
 }
 
@@ -84,14 +92,17 @@ export async function fetchFeed(url: string): Promise<FeedData> {
     faviconUrl = await fetchFavicon(url)
     const items = root.querySelectorAll('entry')
     for (const item of items) {
+      const content = item.querySelector('summary, content')?.textContent
+      const isHtmlOnly = isHtmlOnlyContent(content)
       articles.push({
         url: item.querySelector('link')?.getAttribute('href') || '',
         title: item.querySelector('title')?.textContent || 'Untitled',
-        content_snippet: item.querySelector('summary, content')?.textContent?.slice(0, 500) || null,
+        content_snippet: content?.slice(0, 500) || null,
         published: item.querySelector('published, updated')?.textContent || null,
         fetched_at: new Date().toISOString(),
         ai_score: null,
         image_url: extractImageFromItem(item),
+        is_html_only: isHtmlOnly,
       })
     }
   } else if (root?.tagName === 'channel') {
@@ -99,14 +110,17 @@ export async function fetchFeed(url: string): Promise<FeedData> {
     faviconUrl = await fetchFavicon(url)
     const items = root.querySelectorAll('item')
     for (const item of items) {
+      const description = item.querySelector('description')?.textContent
+      const isHtmlOnly = isHtmlOnlyContent(description)
       articles.push({
         url: item.querySelector('link')?.textContent || '',
         title: item.querySelector('title')?.textContent || 'Untitled',
-        content_snippet: item.querySelector('description')?.textContent?.slice(0, 500) || null,
+        content_snippet: description?.slice(0, 500) || null,
         published: item.querySelector('pubDate')?.textContent || null,
         fetched_at: new Date().toISOString(),
         ai_score: null,
         image_url: extractImageFromItem(item),
+        is_html_only: isHtmlOnly,
       })
     }
   } else if (root?.tagName === 'rss') {
@@ -115,14 +129,17 @@ export async function fetchFeed(url: string): Promise<FeedData> {
     faviconUrl = await fetchFavicon(url)
     const items = channel?.querySelectorAll('item') || []
     for (const item of items) {
+      const description = item.querySelector('description')?.textContent
+      const isHtmlOnly = isHtmlOnlyContent(description)
       articles.push({
         url: item.querySelector('link')?.textContent || '',
         title: item.querySelector('title')?.textContent || 'Untitled',
-        content_snippet: item.querySelector('description')?.textContent?.slice(0, 500) || null,
+        content_snippet: description?.slice(0, 500) || null,
         published: item.querySelector('pubDate')?.textContent || null,
         fetched_at: new Date().toISOString(),
         ai_score: null,
         image_url: extractImageFromItem(item),
+        is_html_only: isHtmlOnly,
       })
     }
   }
@@ -155,13 +172,13 @@ export async function fetchAllFeeds(): Promise<number> {
     if (articles.length === 0) continue
 
     const insert = db.prepare(`
-      INSERT OR IGNORE INTO articles (feed_id, url, title, content_snippet, published, fetched_at, ai_score, image_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO articles (feed_id, url, title, content_snippet, published, fetched_at, ai_score, image_url, is_html_only)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const insertMany = db.transaction((arts: typeof articles) => {
       for (const art of arts) {
-        insert.run(feed.id, art.url, art.title, art.content_snippet, art.published, art.fetched_at, art.ai_score, art.image_url)
+        insert.run(feed.id, art.url, art.title, art.content_snippet, art.published, art.fetched_at, art.ai_score, art.image_url, art.is_html_only ? 1 : 0)
       }
     })
 

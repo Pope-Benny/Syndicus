@@ -103,8 +103,8 @@
 
   .newspaper-header {
     text-align: center;
-    padding-bottom: 1rem;
-    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
     border-bottom: 1px solid var(--rule-color);
     position: relative;
   }
@@ -116,6 +116,76 @@
     display: flex;
     gap: 0.75rem;
     align-items: center;
+  }
+
+  .hamburger-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--accent-sepia);
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease;
+  }
+
+  .hamburger-btn:hover {
+    color: var(--ink-black);
+  }
+
+  .back-btn {
+    position: fixed;
+    top: 0.5rem;
+    left: 0.5rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--accent-sepia);
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease;
+  }
+
+  .back-btn:hover {
+    color: var(--ink-black);
+  }
+
+  .hamburger-menu {
+    position: absolute;
+    top: 3rem;
+    right: 0.5rem;
+    background: var(--paper-cream);
+    border: 1px solid var(--rule-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+    min-width: 180px;
+    overflow: hidden;
+  }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    text-decoration: none;
+    transition: background-color 0.2s ease;
+  }
+
+  .menu-item:hover {
+    background-color: rgba(0, 0, 0, 0.05);
   }
 
   .header-icon {
@@ -220,8 +290,8 @@
 
   .newspaper-header {
     text-align: center;
-    padding-bottom: 1rem;
-    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
     border-bottom: 1px solid var(--rule-color);
     position: relative;
   }
@@ -526,6 +596,7 @@
   .article-card {
     padding: 1rem 0;
     border-bottom: 1px solid var(--rule-light);
+    position: relative;
   }
 
   .article-card:last-child {
@@ -534,10 +605,18 @@
 
   .article-meta {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
     margin-bottom: 0.5rem;
     gap: 0.5rem;
+    position: relative;
+  }
+
+  .score-badge {
+    position: absolute;
+    right: 2rem;
+    top: 50%;
+    transform: translateY(-50%);
   }
 
   .article-date {
@@ -592,15 +671,15 @@
   }
 
   .score-badge.score-high {
-    background-color: rgba(139, 90, 74, 0.15);
-    color: #8b5a4a;
-    border-color: rgba(139, 90, 74, 0.3);
+    background-color: #166534;
+    color: #fff;
+    border-color: #15803d;
   }
 
   .score-badge.score-medium {
-    background-color: rgba(180, 140, 120, 0.2);
-    color: #8b6a5a;
-    border-color: rgba(180, 140, 120, 0.3);
+    background-color: rgba(180, 140, 120, 0.25);
+    color: #7c5a4a;
+    border-color: rgba(160, 120, 100, 0.4);
   }
 
   .score-badge.score-low {
@@ -671,6 +750,63 @@
     color: var(--paper-cream);
   }
 
+.article-dismiss {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .article-dismiss .score-badge {
+    position: static !important;
+    vertical-align: middle;
+  }
+
+  .dismiss-btn {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    padding: 1.5rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    color: var(--text-muted);
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    opacity: 0;
+  }
+
+  .article-card:hover .dismiss-btn {
+    opacity: 1;
+  }
+
+  .dismiss-btn:hover {
+    color: var(--accent-rust);
+    background-color: rgba(0, 0, 0, 0.05);
+  }
+
+  .article-card {
+    position: relative;
+  }
+
+  .article-card.removing {
+    opacity: 0;
+    transform: translateY(-10px);
+    height: 0;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+    border-bottom: none;
+    transition: opacity 0.3s ease, transform 0.3s ease, height 0.3s ease, padding 0.3s ease, margin 0.3s ease;
+  }
+
   .nav-link {
     color: var(--accent-sepia);
     text-decoration: none;
@@ -729,7 +865,7 @@
   }
 
   .settings-section {
-    margin: 1.5rem 0;
+    margin: 0;
   }
 
   .settings-section h2 {
@@ -748,7 +884,7 @@
     font-family: var(--font-body);
     font-size: 0.9375rem;
     color: var(--ink-brown);
-    margin-bottom: 1rem;
+    margin-bottom: 0;
     text-align: left;
   }
 
@@ -786,7 +922,7 @@
     background-color: var(--paper-cream);
     border: 1px solid var(--rule-color);
     color: var(--ink-charcoal);
-    margin-bottom: 1rem;
+    margin: 1rem 0;
     box-sizing: border-box;
     resize: vertical;
   }
@@ -846,7 +982,7 @@
   .feed-form {
     display: flex;
     gap: 0.75rem;
-    margin-bottom: 1rem;
+    margin: 1rem 0;
   }
 
   .feed-form .period-input {
@@ -866,7 +1002,7 @@
     align-items: center;
     padding: 1rem;
     border: 1px solid var(--rule-light);
-    margin-bottom: 0.75rem;
+    margin: 1rem 0;
   }
 
   .feed-item:last-child {
@@ -875,6 +1011,7 @@
 
   .feed-details {
     flex: 1;
+    min-width: 0;
   }
 
   .feed-title-display {
@@ -892,6 +1029,11 @@
     text-decoration: none;
     border-bottom: 1px solid transparent;
     transition: border-color 0.2s ease;
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .feed-url:hover {

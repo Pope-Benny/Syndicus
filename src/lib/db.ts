@@ -40,6 +40,7 @@ function initSchema() {
       fetched_at TEXT NOT NULL,
       ai_score REAL,
       image_url TEXT,
+      is_html_only INTEGER DEFAULT 0,
       FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE,
       UNIQUE(feed_id, url)
     );
@@ -103,9 +104,24 @@ function initSchema() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_articles_is_read ON articles(is_read)`)
   } catch {
   }
+
+  try {
+    db.exec(`ALTER TABLE articles ADD COLUMN is_html_only INTEGER DEFAULT 0`)
+  } catch {
+  }
+
+  try {
+    db.exec(`ALTER TABLE articles ADD COLUMN is_dismissed INTEGER DEFAULT 0`)
+  } catch {
+  }
+
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_articles_is_dismissed ON articles(is_dismissed)`)
+  } catch {
+  }
 }
 
 export type Feed = { id: number; url: string; title: string; last_fetched: string | null; favicon_url: string | null }
-export type Article = { id: number; feed_id: number; url: string; title: string; content_snippet: string | null; published: string | null; fetched_at: string; ai_score: number | null; image_url: string | null; is_read: number }
+export type Article = { id: number; feed_id: number; url: string; title: string; content_snippet: string | null; published: string | null; fetched_at: string; ai_score: number | null; image_url: string | null; is_read: number; is_html_only: number }
 export type Engagement = { id: number; article_url: string; article_title: string | null; content_snippet: string | null; event_type: 'click' | 'like'; timestamp: string }
 export type Preferences = { id: number; prompt_text: string; dark_mode: number }
