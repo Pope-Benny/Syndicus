@@ -133,6 +133,8 @@ function FeedPage() {
   const handleToggleDarkMode = useServerFn(toggleDarkMode)
   const [showSun, setShowSun] = React.useState(darkMode)
   const [initialLoad, setInitialLoad] = React.useState(true)
+  const [menuOpen, setMenuOpen] = React.useState(false)
+  const [showScrollTop, setShowScrollTop] = React.useState(false)
 
   const loadArticles = async () => {
     const arts = await handleGetArticles({ data: { limit: 50 } })
@@ -162,7 +164,13 @@ function FeedPage() {
     }
   }, [initialLoad])
 
-const [menuOpen, setMenuOpen] = React.useState(false)
+  React.useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300)
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   return (
     <div className="newspaper-container">
@@ -248,6 +256,16 @@ const [menuOpen, setMenuOpen] = React.useState(false)
             <ArticleCard key={article.id} article={article} onDismiss={handleDismiss} onClick={handleClick} />
           ))}
         </div>
+
+        <button
+          className={`scroll-to-top ${showScrollTop ? 'visible' : ''}`}
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          title="Back to top"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 15l-6-6-6 6"/>
+          </svg>
+        </button>
     </div>
   )
 }
