@@ -12,6 +12,7 @@ An AI-curated RSS reader with a classic newspaper aesthetic. Syndicus fetches ar
 - **Automatic Refresh** - Fetch new articles on demand
 - **Read/Unread Tracking** - Track which articles you've already read
 - **Like & Dismiss** - Like articles to save or dismiss to hide
+- **Back to Top** - Quickly return to the top of the feed
 - **Mobile Responsive** - Works on desktop and mobile devices
 
 ## Tech Stack
@@ -57,8 +58,7 @@ docker-compose up --build
 src/
 ├── routes/
 │   ├── __root.tsx      # Root layout
-│   ├── index.tsx        # Main feed page
-│   └── settings.tsx      # Settings page
+│   └── index.tsx        # Main feed page (includes settings modal)
 ├── lib/
 │   ├── db.ts          # Database utilities
 │   ├── rss.ts        # RSS feed fetching
@@ -70,12 +70,13 @@ src/
 
 ## Adding New Feeds
 
-Feeds can be added through the Settings page. Each feed is periodically fetched and new articles are scored by the AI.
+Feeds can be added through the Settings modal. Open it via the hamburger menu (top-right) and add feed URLs. Each feed is periodically fetched and new articles are scored by the AI.
 
 ## Keyboard Shortcuts
 
 - Scroll down to load more articles
 - Use the hamburger menu (top-right) to access settings, toggle theme, and refresh feeds
+- Click the "Back to Top" button to scroll to the top of the feed
 
 ## Theme
 
