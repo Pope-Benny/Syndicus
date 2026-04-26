@@ -239,6 +239,14 @@
     object-fit: contain;
   }
 
+  .hero-updated {
+    font-family: var(--font-body);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin: 0.25rem 0 0;
+    letter-spacing: 0.05em;
+  }
+
   .hero-title {
     font-family: "UnifrakturMaguntia", serif;
     font-size: clamp(2.5rem, 7vw, 4.5rem);
@@ -663,6 +671,15 @@
     border: 1px solid var(--rule-light);
   }
 
+  @media (min-width: 769px) {
+    .article-image {
+      aspect-ratio: 3/2;
+      max-height: none;
+      object-fit: contain;
+      margin-bottom: 1rem;
+    }
+  }
+
   .score-badge {
     font-family: var(--font-mono);
     font-size: 0.6875rem;
@@ -790,6 +807,31 @@
   .dismiss-btn:hover {
     color: var(--accent-rust);
     background-color: rgba(0, 0, 0, 0.05);
+  }
+
+  .favorite-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.15rem;
+    margin-left: 0.25rem;
+    color: var(--text-muted);
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+  }
+
+  .favorite-btn:hover {
+    color: var(--accent-gold);
+    background-color: rgba(0, 0, 0, 0.05);
+  }
+
+  .favorite-btn.favorited {
+    color: var(--accent-gold);
+    opacity: 1;
   }
 
   .article-card {
@@ -1025,15 +1067,36 @@
   .feed-url {
     font-family: var(--font-mono);
     font-size: 0.75rem;
-    color: var(--accent-sepia);
-    text-decoration: none;
-    border-bottom: 1px solid transparent;
-    transition: border-color 0.2s ease;
-    display: block;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: var(--text-muted);
+    word-break: break-all;
+  }
+
+  .feed-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .feed-actions .favorite-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    color: var(--text-muted);
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .feed-actions .favorite-btn:hover {
+    color: var(--accent-gold);
+    background-color: rgba(0, 0, 0, 0.05);
+  }
+
+  .feed-actions .favorite-btn.favorited {
+    color: var(--accent-gold);
   }
 
   .feed-url:hover {
@@ -1193,4 +1256,71 @@
 .scroll-to-top:hover {
   color: var(--ink-black);
   background-color: var(--paper-aged);
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+  .modal-content {
+  background: var(--paper-cream);
+  border: 1px solid var(--rule-color);
+  width: 100%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid var(--rule-color);
+}
+
+.modal-header h2 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--ink-black);
+  margin: 0;
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  color: var(--text-muted);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  color: var(--ink-black);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.settings-content {
+  padding: 1rem;
+}
+
+.settings-description {
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--ink-brown);
+  margin: 0 0 1rem;
 }

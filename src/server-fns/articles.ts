@@ -9,7 +9,7 @@ export const getArticles = createServerFn({ method: 'GET' })
     const offset = data?.offset || 0
 
     const articles = db.prepare(`
-      SELECT a.*, f.title as feed_title
+      SELECT a.*, f.title as feed_title, f.is_favorite as feed_is_favorite
       FROM articles a
       JOIN feeds f ON a.feed_id = f.id
       WHERE a.ai_score IS NOT NULL
@@ -20,12 +20,17 @@ export const getArticles = createServerFn({ method: 'GET' })
     return articles
   })
 
-export const refreshFeeds = createServerFn({ method: 'POST' }).handler(async () => {
-  const { fetchAllFeeds } = await import('~/lib/rss')
-  const { scoreAllArticles } = await import('~/lib/ai')
+export const refreshFeeds = createServerFn({ method: 'POST' })
+  .inputValidator((data?: { force?: boolean }) => data)
+  .handler(async ({ data }) => {
+    const { fetchAllFeeds } = await import('~/lib/rss')
+    const { scoreAllArticles } = await import('~/lib/ai')
 
-  const count = await fetchAllFeeds()
-  await scoreAllArticles()
+    const result = await fetchAllFeeds(!!data?.force)
+    if (result.errors.length > 0) {
+      console.log(`[RSS] Had ${result.errors.length} errors:`, result.errors)
+    }
+    await scoreAllArticles()
 
-  return { ok: true, articlesAdded: count }
-})
+    return { ok: true, ...result }
+  })

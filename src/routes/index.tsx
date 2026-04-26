@@ -1,26 +1,38 @@
 import * as React from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useServerFn } from '~/lib/useServerFn'
 
 const getArticles = createServerFn({ method: 'GET' })
-  .inputValidator((data: { limit?: number; offset?: number }) => data)
-  .handler(async () => {
+  .inputValidator((data: { limit?: number; offset?: number; oldestDays?: number }) => data)
+  .handler(async ({ data }) => {
     try {
       const db = await import('~/lib/db').then(m => m.getDb())
-      const limit = 50
-      const offset = 0
+      const limit = data?.limit || 100
+      const offset = data?.offset || 0
+      const oldestDays = data?.oldestDays || 30
+
+      const cutoffDate = new Date()
+      cutoffDate.setDate(cutoffDate.getDate() - oldestDays)
+      const cutoffTime = cutoffDate.getTime()
 
       const articles = db.prepare(`
-        SELECT a.*, f.title as feed_title, f.favicon_url
+        SELECT a.*, f.title as feed_title, f.favicon_url, f.is_favorite as feed_is_favorite, f.id as feed_id
         FROM articles a
         JOIN feeds f ON a.feed_id = f.id
         WHERE a.ai_score IS NOT NULL AND a.is_dismissed = 0
         ORDER BY a.is_read ASC, RANDOM()
-        LIMIT ? OFFSET ?
-      `).all(limit, offset) as any[]
+        LIMIT 500
+      `).all() as any[]
 
-      const sorted = [...articles].sort((a, b) => {
+      const filtered = articles.filter(a => {
+        const pubDate = a.published ? new Date(a.published).getTime() : null
+        const fetchDate = new Date(a.fetched_at).getTime()
+        const articleTime = pubDate || fetchDate
+        return articleTime >= cutoffTime
+      })
+
+      const sorted = filtered.slice(offset, offset + limit).sort((a, b) => {
         if (a.is_read !== b.is_read) return a.is_read - b.is_read
         const dateA = new Date(a.published || a.fetched_at).getTime()
         const dateB = new Date(b.published || b.fetched_at).getTime()
@@ -36,14 +48,30 @@ const getArticles = createServerFn({ method: 'GET' })
   })
 
 const refreshFeeds = createServerFn({ method: 'POST' })
-  .inputValidator((data: { scoreArticles?: boolean }) => data)
+  .inputValidator((data?: { force?: boolean; clear?: boolean; scoreArticles?: boolean }) => data)
   .handler(async ({ data }) => {
     console.log('[refreshFeeds] Starting refresh...')
     
     try {
+      if (data?.clear) {
+        const { clearOldArticles } = await import('~/lib/rss')
+        const cleared = await clearOldArticles()
+        console.log('[refreshFeeds] Cleared', cleared, 'articles')
+      }
+      
       const { fetchAllFeeds } = await import('~/lib/rss')
-      const count = await fetchAllFeeds()
-      console.log('[refreshFeeds] Fetched', count, 'articles')
+      let refreshResult: { added: number; skipped: number; errors: string[] }
+      
+      try {
+        refreshResult = await fetchAllFeeds(!!data?.force)
+      } catch {
+        refreshResult = { added: 0, skipped: 0, errors: ['Legacy fetchAllFeeds returned number instead of object'] }
+      }
+      
+      console.log('[refreshFeeds] Fetched', refreshResult.added, 'articles, skipped', refreshResult.skipped)
+      if (refreshResult.errors.length > 0) {
+        console.log('[refreshFeeds] Errors:', refreshResult.errors)
+      }
       
       if (data?.scoreArticles !== false) {
         console.log('[refreshFeeds] Starting AI scoring...')
@@ -52,12 +80,32 @@ const refreshFeeds = createServerFn({ method: 'POST' })
         console.log('[refreshFeeds] AI scoring complete')
       }
 
-      return { ok: true, articlesAdded: count }
+      return { ok: true, ...refreshResult }
     } catch (err) {
       console.error('[refreshFeeds] Error:', err)
-      return { ok: false, error: String(err), articlesAdded: 0 }
+      return { ok: false, error: String(err), added: 0, skipped: 0, errors: [String(err)] }
     }
   })
+
+const autoRefresh = createServerFn({ method: 'POST' }).handler(async () => {
+  console.log('[autoRefresh] Starting scheduled refresh at 7am...')
+  
+  try {
+    const { fetchAllFeeds } = await import('~/lib/rss')
+    const result = await fetchAllFeeds(false)
+    
+    console.log('[autoRefresh] Fetched', result.added, 'articles, skipped', result.skipped)
+    
+    const { scoreAllArticles } = await import('~/lib/ai')
+    await scoreAllArticles()
+    
+    console.log('[autoRefresh] Complete')
+    return { ok: true, ...result }
+  } catch (err) {
+    console.error('[autoRefresh] Error:', err)
+    return { ok: false, error: String(err), added: 0, skipped: 0, errors: [String(err)] }
+  }
+})
 
 const addLike = createServerFn({ method: 'POST' })
   .inputValidator((data: { articleUrl: string; articleTitle: string; contentSnippet: string }) => data)
@@ -106,24 +154,79 @@ const toggleDarkMode = createServerFn({ method: 'POST' })
     return { ok: true }
   })
 
+const getFeeds = createServerFn({ method: 'GET' }).handler(async () => {
+  const db = await import('~/lib/db').then(m => m.getDb())
+  return db.prepare('SELECT * FROM feeds ORDER BY id').all()
+})
+
+const addFeed = createServerFn({ method: 'POST' })
+  .inputValidator((data: { url: string }) => data)
+  .handler(async ({ data }) => {
+    const db = await import('~/lib/db').then(m => m.getDb())
+    const { url } = data
+
+    const existing = db.prepare('SELECT id FROM feeds WHERE url = ?').get(url)
+    if (existing) {
+      return { ok: false, error: 'Feed already exists' }
+    }
+
+    const { fetchFeed } = await import('~/lib/rss')
+    const result = await fetchFeed(url)
+    const title = result.title || 'Unknown Feed'
+
+    const info = db.prepare('INSERT INTO feeds (url, title) VALUES (?, ?)').run(url, title)
+    const newFeed = db.prepare('SELECT * FROM feeds WHERE url = ?').get(url)
+
+    return { ok: true, title, feed: newFeed }
+  })
+
+const removeFeed = createServerFn({ method: 'POST' })
+  .inputValidator((data: { id: number }) => data)
+  .handler(async ({ data }) => {
+    const db = await import('~/lib/db').then(m => m.getDb())
+    db.prepare('DELETE FROM articles WHERE feed_id = ?').run(data.id)
+    db.prepare('DELETE FROM feeds WHERE id = ?').run(data.id)
+    return { ok: true }
+  })
+
+const toggleFeedFavorite = createServerFn({ method: 'POST' })
+  .inputValidator((data: { id: number }) => data)
+  .handler(async ({ data }) => {
+    const db = await import('~/lib/db').then(m => m.getDb())
+    const feed = db.prepare('SELECT is_favorite FROM feeds WHERE id = ?').get(data.id) as { is_favorite: number } | undefined
+    if (!feed) {
+      return { ok: false, error: 'Feed not found' }
+    }
+    const newValue = feed.is_favorite ? 0 : 1
+    db.prepare('UPDATE feeds SET is_favorite = ? WHERE id = ?').run(newValue, data.id)
+    return { ok: true, is_favorite: newValue }
+  })
+
 export const Route = createFileRoute('/')({
   component: FeedPage,
   loader: async ({ context }) => {
     try {
       const db = await import('~/lib/db').then(m => m.getDb())
       const prefs = db.prepare('SELECT dark_mode FROM preferences WHERE id = 1').get()
-      return { darkMode: prefs?.dark_mode === 1 }
+      const lastFetch = db.prepare('SELECT MAX(last_fetched) as last_fetched FROM feeds WHERE last_fetched IS NOT NULL').get()
+      const lastFetched = lastFetch?.last_fetched ? String(lastFetch.last_fetched) : null
+      const feeds = await getFeeds({ data: {} })
+      return { darkMode: prefs?.dark_mode === 1, lastFetched, feeds }
     } catch (err) {
       console.error('Failed to load feed data:', err)
-      return { darkMode: false }
+      return { darkMode: false, lastFetched: null, feeds: [] }
     }
   },
 })
 
 function FeedPage() {
-  const { darkMode } = Route.useLoaderData() as { articles: any[]; darkMode: boolean }
+  const { darkMode, lastFetched, feeds: initialFeeds } = Route.useLoaderData() as { articles: any[]; darkMode: boolean; lastFetched: string | null; feeds: any[] }
+  const router = useRouter()
   const [refreshing, setRefreshing] = React.useState(false)
   const [articlesList, setArticlesList] = React.useState<any[]>([])
+  const [feedUrl, setFeedUrl] = React.useState('')
+  const [feedsList, setFeedsList] = React.useState(initialFeeds)
+  const [addFeedError, setAddFeedError] = React.useState('')
 
   const handleRefresh = useServerFn(refreshFeeds)
   const handleGetArticles = useServerFn(getArticles)
@@ -135,26 +238,32 @@ function FeedPage() {
   const [initialLoad, setInitialLoad] = React.useState(true)
   const [menuOpen, setMenuOpen] = React.useState(false)
   const [showScrollTop, setShowScrollTop] = React.useState(false)
+  const [settingsOpen, setSettingsOpen] = React.useState(false)
+
+  const handleGetFeeds = useServerFn(getFeeds)
+  const handleAddFeed = useServerFn(addFeed)
+  const handleRemoveFeed = useServerFn(removeFeed)
+  const handleToggleFavorite = useServerFn(toggleFeedFavorite)
 
   const loadArticles = async () => {
     const arts = await handleGetArticles({ data: { limit: 50 } })
     setArticlesList(arts || [])
   }
 
-  const onLoadRefresh = async () => {
-    setRefreshing(true)
-    await handleRefresh({ data: { scoreArticles: true } })
-    await loadArticles()
-    setRefreshing(false)
-  }
-
   const onRefresh = async () => {
     setRefreshing(true)
-    const result = await handleRefresh({ data: { scoreArticles: true } })
+    const result = await handleRefresh({ data: { force: true, scoreArticles: true } })
     setRefreshing(false)
     if (result?.ok) {
       await loadArticles()
     }
+  }
+
+  const onLoadRefresh = async () => {
+    setRefreshing(true)
+    await handleRefresh({ data: { force: false, scoreArticles: true } })
+    await loadArticles()
+    setRefreshing(false)
   }
 
   React.useEffect(() => {
@@ -182,6 +291,11 @@ function FeedPage() {
             className="hero-image"
             style={{ filter: showSun ? 'invert(1)' : undefined }}
           />
+          {lastFetched && (
+            <p className="hero-updated">
+              Updated {new Date(lastFetched).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+            </p>
+          )}
         </div>
         <button
           className="hamburger-btn"
@@ -240,13 +354,16 @@ function FeedPage() {
               )}
               <span>{refreshing ? "Refreshing..." : "Refresh Feeds"}</span>
             </button>
-            <a href="/settings" className="menu-item" onClick={() => setMenuOpen(false)}>
+            <button
+              onClick={() => { setMenuOpen(false); setSettingsOpen(true); }}
+              className="menu-item"
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="3"/>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
               </svg>
               <span>Settings</span>
-            </a>
+            </button>
           </div>
         )}
       </header>
@@ -266,6 +383,95 @@ function FeedPage() {
             <path d="M18 15l-6-6-6 6"/>
           </svg>
         </button>
+
+        {settingsOpen && (
+          <div className="modal-overlay" onClick={() => setSettingsOpen(false)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Settings</h2>
+                <button onClick={() => setSettingsOpen(false)} className="modal-close">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+              <div className="settings-content">
+                <p className="settings-description">
+                  Add RSS feeds. Feeds will be checked periodically for new articles.
+                </p>
+                <form onSubmit={async (e) => {
+                  e.preventDefault()
+                  if (!feedUrl.trim()) return
+                  const result = await handleAddFeed({ data: { url: feedUrl } })
+                  setFeedUrl('')
+                  if (result?.ok && result.feed) {
+                    setFeedsList(prev => [...prev, result.feed])
+                  } else if (result?.ok === false) {
+                    setAddFeedError(result.error || 'Failed to add feed')
+                  }
+                }} className="feed-form">
+                  <input
+                    type="url"
+                    value={feedUrl}
+                    onChange={e => setFeedUrl(e.target.value)}
+                    placeholder="https://example.com/feed.xml"
+                    className="period-input"
+                  />
+                  <button type="submit" className="period-button primary">
+                    Add
+                  </button>
+                </form>
+
+                {addFeedError && (
+                  <p style={{ color: '#dc2626', marginTop: '8px' }}>{addFeedError}</p>
+                )}
+
+                {feedsList.length === 0 ? (
+                  <p style={{ color: 'var(--ink-brown)', fontStyle: 'italic' }}>No feeds added yet.</p>
+                ) : (
+                  <ul className="feeds-list">
+                    {feedsList.map((feed: any) => (
+                      <li key={feed.id} className="feed-item">
+                        <div className="feed-details">
+                          <div className="feed-title-display">{feed.title}</div>
+                          <a href={feed.url} target="_blank" rel="noopener noreferrer" className="feed-url">
+                            {feed.url}
+                          </a>
+                        </div>
+                        <div className="feed-actions">
+                          <button
+                            onClick={async () => {
+                              await handleToggleFavorite({ data: { id: feed.id } })
+                              setFeedsList(prev => prev.map(f => 
+                                f.id === feed.id ? { ...f, is_favorite: f.is_favorite ? 0 : 1 } : f
+                              ))
+                            }}
+                            className={`favorite-btn ${feed.is_favorite ? 'favorited' : ''}`}
+                            title={feed.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill={feed.is_favorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                            </svg>
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await handleRemoveFeed({ data: { id: feed.id } })
+                              setFeedsList(prev => prev.filter(f => f.id !== feed.id))
+                            }}
+                            className="period-button danger"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   )
 }

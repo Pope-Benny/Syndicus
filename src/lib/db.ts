@@ -64,14 +64,13 @@ function initSchema() {
 
     CREATE TABLE IF NOT EXISTS preferences (
       id INTEGER PRIMARY KEY,
-      prompt_text TEXT NOT NULL,
       dark_mode INTEGER DEFAULT 0
     );
   `)
 
   const prefs = db.prepare('SELECT * FROM preferences WHERE id = 1').get()
   if (!prefs) {
-    db.prepare('INSERT INTO preferences (id, prompt_text, dark_mode) VALUES (1, ?, 0)').run('Show me interesting tech articles about AI, productivity, and new programming tools')
+    db.prepare('INSERT INTO preferences (id, dark_mode) VALUES (1, 0)').run()
   }
 
   try {
@@ -119,9 +118,14 @@ function initSchema() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_articles_is_dismissed ON articles(is_dismissed)`)
   } catch {
   }
+
+  try {
+    db.exec(`ALTER TABLE feeds ADD COLUMN is_favorite INTEGER DEFAULT 0`)
+  } catch {
+  }
 }
 
-export type Feed = { id: number; url: string; title: string; last_fetched: string | null; favicon_url: string | null }
+export type Feed = { id: number; url: string; title: string; last_fetched: string | null; favicon_url: string | null; is_favorite: number }
 export type Article = { id: number; feed_id: number; url: string; title: string; content_snippet: string | null; published: string | null; fetched_at: string; ai_score: number | null; image_url: string | null; is_read: number; is_html_only: number }
 export type Engagement = { id: number; article_url: string; article_title: string | null; content_snippet: string | null; event_type: 'click' | 'like'; timestamp: string }
-export type Preferences = { id: number; prompt_text: string; dark_mode: number }
+export type Preferences = { id: number; dark_mode: number }

@@ -9,4 +9,5 @@ services:
       - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - DATABASE_PATH=/app/data/syndicus.db
+      - MAX_AGE_DAYS=${MAX_AGE_DAYS:-3}
     network_mode: bridge

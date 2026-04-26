@@ -103,12 +103,12 @@ export async function scoreArticlesByEngagement(): Promise<number> {
   }
 
   const unscoredData = db.prepare(`
-    SELECT a.*, f.title as feed_title FROM articles a
+    SELECT a.*, f.title as feed_title, f.is_favorite as feed_is_favorite FROM articles a
     JOIN feeds f ON a.feed_id = f.id
     WHERE a.ai_score IS NULL
     ORDER BY a.fetched_at DESC
     LIMIT 15
-  `).all() as (Article & { feed_title: string })[]
+  `).all() as (Article & { feed_title: string; feed_is_favorite: number })[]
 
   if (unscoredData.length === 0) return 0
 
@@ -133,8 +133,11 @@ export async function scoreArticlesByEngagement(): Promise<number> {
       const similarities = validUserEmbeds.map(userEmb => cosineSimilarity(userEmb, emb))
       const maxSimilarity = Math.max(...similarities)
       let score = (maxSimilarity + 1) / 2
+      if (article.feed_is_favorite) {
+        score = Math.min(0.98, score + 0.15)
+      }
       score = score + (Math.random() - 0.5) * 0.1
-      score = Math.max(0.1, Math.min(0.95, score))
+      score = Math.max(0.1, Math.min(0.98, score))
 
       db.prepare('UPDATE articles SET ai_score = ? WHERE id = ?').run(score, article.id)
     }
