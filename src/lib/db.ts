@@ -66,6 +66,11 @@ function initSchema() {
       id INTEGER PRIMARY KEY,
       dark_mode INTEGER DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `)
 
   const prefs = db.prepare('SELECT * FROM preferences WHERE id = 1').get()

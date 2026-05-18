@@ -10,7 +10,7 @@ const getArticles = createServerFn({ method: 'GET' })
       const db = await import('~/lib/db').then(m => m.getDb())
       const limit = data?.limit || 100
       const offset = data?.offset || 0
-      const oldestDays = data?.oldestDays || 30
+      const oldestDays = data?.oldestDays || 10
 
       const cutoffDate = new Date()
       cutoffDate.setDate(cutoffDate.getDate() - oldestDays)
@@ -20,9 +20,8 @@ const getArticles = createServerFn({ method: 'GET' })
         SELECT a.*, f.title as feed_title, f.favicon_url, f.is_favorite as feed_is_favorite, f.id as feed_id
         FROM articles a
         JOIN feeds f ON a.feed_id = f.id
-        WHERE a.ai_score IS NOT NULL AND a.is_dismissed = 0
-        ORDER BY a.is_read ASC, RANDOM()
-        LIMIT 500
+        WHERE a.is_dismissed = 0
+        ORDER BY a.is_read ASC, a.ai_score DESC, a.published DESC
       `).all() as any[]
 
       const filtered = articles.filter(a => {
@@ -32,12 +31,19 @@ const getArticles = createServerFn({ method: 'GET' })
         return articleTime >= cutoffTime
       })
 
+      const now = Date.now()
+      const threeDaysMs = 3 * 24 * 60 * 60 * 1000
+
       const sorted = filtered.slice(offset, offset + limit).sort((a, b) => {
         if (a.is_read !== b.is_read) return a.is_read - b.is_read
-        const dateA = new Date(a.published || a.fetched_at).getTime()
-        const dateB = new Date(b.published || b.fetched_at).getTime()
-        if (dateA !== dateB) return dateB - dateA
-        return (b.ai_score || 0) - (a.ai_score || 0)
+
+        const recencyA = Math.max(0, 1 - ((now - new Date(a.published || a.fetched_at).getTime()) / threeDaysMs))
+        const recencyB = Math.max(0, 1 - ((now - new Date(b.published || b.fetched_at).getTime()) / threeDaysMs))
+
+        const compositeA = ((a.ai_score || 0) * 0.5) + (recencyA * 0.5)
+        const compositeB = ((b.ai_score || 0) * 0.5) + (recencyB * 0.5)
+
+        return compositeB - compositeA
       })
 
       return sorted
@@ -63,7 +69,7 @@ const refreshFeeds = createServerFn({ method: 'POST' })
       let refreshResult: { added: number; skipped: number; errors: string[] }
       
       try {
-        refreshResult = await fetchAllFeeds(!!data?.force)
+        refreshResult = await fetchAllFeeds()
       } catch {
         refreshResult = { added: 0, skipped: 0, errors: ['Legacy fetchAllFeeds returned number instead of object'] }
       }
@@ -92,7 +98,7 @@ const autoRefresh = createServerFn({ method: 'POST' }).handler(async () => {
   
   try {
     const { fetchAllFeeds } = await import('~/lib/rss')
-    const result = await fetchAllFeeds(false)
+    const result = await fetchAllFeeds()
     
     console.log('[autoRefresh] Fetched', result.added, 'articles, skipped', result.skipped)
     
@@ -246,7 +252,7 @@ function FeedPage() {
   const handleToggleFavorite = useServerFn(toggleFeedFavorite)
 
   const loadArticles = async () => {
-    const arts = await handleGetArticles({ data: { limit: 50 } })
+    const arts = await handleGetArticles({ data: { limit: 10000 } })
     setArticlesList(arts || [])
   }
 

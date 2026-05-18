@@ -12,8 +12,8 @@ export const getArticles = createServerFn({ method: 'GET' })
       SELECT a.*, f.title as feed_title, f.is_favorite as feed_is_favorite
       FROM articles a
       JOIN feeds f ON a.feed_id = f.id
-      WHERE a.ai_score IS NOT NULL
-      ORDER BY a.ai_score DESC, a.published DESC
+      WHERE a.is_dismissed = 0
+      ORDER BY a.is_read ASC, a.ai_score DESC, a.published DESC
       LIMIT ? OFFSET ?
     `).all(limit, offset) as any[]
 
@@ -21,12 +21,11 @@ export const getArticles = createServerFn({ method: 'GET' })
   })
 
 export const refreshFeeds = createServerFn({ method: 'POST' })
-  .inputValidator((data?: { force?: boolean }) => data)
-  .handler(async ({ data }) => {
+  .handler(async () => {
     const { fetchAllFeeds } = await import('~/lib/rss')
     const { scoreAllArticles } = await import('~/lib/ai')
 
-    const result = await fetchAllFeeds(!!data?.force)
+    const result = await fetchAllFeeds()
     if (result.errors.length > 0) {
       console.log(`[RSS] Had ${result.errors.length} errors:`, result.errors)
     }

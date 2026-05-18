@@ -107,15 +107,14 @@ export async function scoreArticlesByEngagement(): Promise<number> {
     JOIN feeds f ON a.feed_id = f.id
     WHERE a.ai_score IS NULL
     ORDER BY a.fetched_at DESC
-    LIMIT 15
   `).all() as (Article & { feed_title: string; feed_is_favorite: number })[]
 
   if (unscoredData.length === 0) return 0
 
-  const unscoredTexts = unscoredData.map(a => 
+  const unscoredTexts = unscoredData.map(a =>
     `${a.feed_title}: ${a.title}${a.content_snippet ? ' ' + a.content_snippet : ''}`
   )
-  
+
   console.log('[AI] Getting embeddings for', unscoredTexts.length, 'articles')
 
   const unscoredEmbeddings = await getEmbeddingsBatch(unscoredTexts)
