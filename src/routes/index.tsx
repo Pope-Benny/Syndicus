@@ -32,16 +32,20 @@ const getArticles = createServerFn({ method: 'GET' })
       })
 
       const now = Date.now()
-      const threeDaysMs = 3 * 24 * 60 * 60 * 1000
+      const twelveHrMs = 12 * 60 * 60 * 1000
 
       const sorted = filtered.slice(offset, offset + limit).sort((a, b) => {
         if (a.is_read !== b.is_read) return a.is_read - b.is_read
 
-        const recencyA = Math.max(0, 1 - ((now - new Date(a.published || a.fetched_at).getTime()) / threeDaysMs))
-        const recencyB = Math.max(0, 1 - ((now - new Date(b.published || b.fetched_at).getTime()) / threeDaysMs))
+        const ageA = now - new Date(a.published || a.fetched_at).getTime()
+        const ageB = now - new Date(b.published || b.fetched_at).getTime()
+        const bucketA = Math.min(4, Math.floor(ageA / twelveHrMs))
+        const bucketB = Math.min(4, Math.floor(ageB / twelveHrMs))
+        const recencyA = Math.max(0, 1 - bucketA * 0.25)
+        const recencyB = Math.max(0, 1 - bucketB * 0.25)
 
-        const compositeA = ((a.ai_score || 0) * 0.5) + (recencyA * 0.5)
-        const compositeB = ((b.ai_score || 0) * 0.5) + (recencyB * 0.5)
+        const compositeA = ((a.ai_score || 0) * 0.6) + (recencyA * 0.4)
+        const compositeB = ((b.ai_score || 0) * 0.6) + (recencyB * 0.4)
 
         return compositeB - compositeA
       })
